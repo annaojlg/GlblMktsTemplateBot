@@ -11,12 +11,13 @@ from Management import Management
 
 sys.path.append('../')
 format = "%(asctime)s [%(levelname)s] %(name)s.%(funcName)s() line: %(lineno)d: %(message)s"
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', level=logging.INFO)
+
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+                    level=logging.INFO)
+
 
 # ******** Team I Bot (InfluxDB) ********
 class ExecutionBot(Management):
-    # Create empty DataFrame so orders can be added
-    df = pd.DataFrame(columns=['_time','symb','price','origQty','orderNo','status','remainingQty','action','side','FOK','AON','strategy'])
 
     def __init__(self, strategy, starting_money,
                  market_event_securities, market_event_queue, securities,
@@ -25,8 +26,6 @@ class ExecutionBot(Management):
         super(ExecutionBot, self).__init__(strategy, starting_money,
                                            market_event_securities, market_event_queue, securities,
                                            host, bot_id)
-
-        self.readConfigFile()
 
         # # Subscription to order book in order to passively send orders
         # self.kickoff()
@@ -45,16 +44,6 @@ class ExecutionBot(Management):
     # def __del__(self):
     #     super().__del__()
     #     self.logger.info(f'Connection closed!')
-
-    def readConfigFile(self):       
-        configparse = ConfigParser()
-        root_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-        # Fetch configuration for logging market regime data
-        config_path = os.path.join(root_path, 'config/sys_config.ini')
-        configparse.read(config_path)
-        self.regime_data_path = configparse.get('REGIMEDATA', 'regime_data_path')
-        self.regime_data_csv_filename = configparse.get('REGIMEDATA', 'regime_data_csv_filename')
 
     def start_task(self, sym, action, size):
         # self.start()
@@ -78,47 +67,6 @@ class ExecutionBot(Management):
         self.stat['time_t'] = time_t
         self.stat['slices'] = slices
         self.stop(self.stat, log=True)
-
-    def log_order(self, order, order_status):
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -- ORDER -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        print(order)
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        
-        # Log fully filled (inactive) orders for fingerprinting:
-        ts_final = pd.Timestamp(datetime.datetime.now()).tz_localize("UTC")
-        date_elem = ts_final.date()
-        time_elem = ts_final.time()
-        ts_date = f'{date_elem}T{time_elem}Z'
-        timestamped_order = {'_time':ts_date, 
-                'symb': order['symb'],
-                'price': float(order['price']),
-                'origQty': int(order['origQty']),
-                'orderNo': int(order['orderNo']),
-                'status': order_status,
-                'remainingQty': int(order['remainingQty']),
-                'action':order['action'],
-                'side': order['side'],
-                'FOK': int(order['FOK']),
-                'AON': int(order['AON']),
-                'strategy': order['strategy']}
-        new_df_row = pd.DataFrame([timestamped_order])
-        
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -- Timestamped Order -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        print(timestamped_order)
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -- New DF Row -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        print(new_df_row)
-        print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-        
-        self.df = pd.concat([self.df, new_df_row], ignore_index=True)
-        
-        print("-------------------------------------------------- DATAFRAME OF TIMESTAMPED ORDERS (ExecutionBot) --------------------------------------------------")
-        print(self.df)
-        print("------------------------------------------------------------------------------------------------------------------------------------------------------")
-
-    def save_new_orders_to_file(self):
-        trading_market_regime_file = os.path.join(self.regime_data_path, self.regime_data_csv_filename)
-        self.df.to_csv(trading_market_regime_file, mode='a', index=False, header=False)
-        #self.df.to_csv('/robothon/jlg204/RobothonsPlatforms/RobothonGlblMkts/ArchSimTrading/trading_data.csv', mode='a', index=False, header=False)
 
     def aggressive_orders(self, qty, action, exec_t=2, log=True):
         sym = self.securities[0]
@@ -246,8 +194,6 @@ class ExecutionBot(Management):
                     pv += order['price'] * \
                         (order['origQty'] - order['remainingQty'])
 
-                    self.log_order(order, 'C')
-                    
                 # increment pv by fully filled amount
                 else:
                     self.logger.info(f"Fully filled aggressive order: \n"
@@ -258,8 +204,6 @@ class ExecutionBot(Management):
                                      f"{order['price']}")
 
                     pv += order['price'] * order['origQty']
-
-                    self.log_order(order, 'I')
 
         # avg execution price
         # is it possible to have qty > 0 still?
@@ -454,8 +398,6 @@ class ExecutionBot(Management):
                     # increment pv by filled amount
                     pv += order['price'] * \
                         (order['origQty'] - order['remainingQty'])
-                    
-                    self.log_order(order, 'C')
 
                 # Modify_1: don't do aggressive_roders at the end of every slice
                 # pv_slice, qty_slice = self.aggressive_orders(qty_slice, action)
@@ -471,27 +413,6 @@ class ExecutionBot(Management):
                                      f"{order['price']}")
 
                     pv += order['price'] * order['origQty']
-                    self.log_order(order, 'I')
-                    # Log fully filled (inactive) orders for fingerprinting:
-                    ts_final = pd.Timestamp(datetime.datetime.now()).tz_localize("UTC")
-                    date_elem = ts_final.date()
-                    time_elem = ts_final.time()
-                    ts_date = f'{date_elem}T{time_elem}Z'
-                    timestamped_order = {'_time':ts_date, 
-                            'symb': order['sym'],
-                            'price': float(order['price']),
-                            'origQty': int(order['quantity']),
-                            'orderNo': -1,
-                            'status': "I",
-                            'remainingQty': int(order['quantity']),
-                            'action': None,
-                            'side': order['side'],
-                            'FOK': 0,
-                            'AON': 0,
-                            'strategy': order['strategy']}
-                    new_df_row = pd.DataFrame([timestamped_order])
-                    self.df = pd.concat([self.df, new_df_row], ignore_index=True)
-                    
             # ----------- Modify_2 end ------------
 
             # Modify_1: update qty
@@ -531,10 +452,6 @@ class ExecutionBot(Management):
         cost_qty = (pv + pv_final) / qty_target - benchmark_price
         if action == 'buy':
             cost_qty *= -1
-
-        print("-------------------------------------------------- DATAFRAME OF TIMESTAMPED ORDERS (ExecutionBot) --------------------------------------------------")
-        print(self.df)
-        print("------------------------------------------------------------------------------------------------------------------------------------------------------")
 
         return pv, qty
 
@@ -589,7 +506,7 @@ if __name__ == "__main__":
 
     end_t = time.time()
     exec_bot.task_complete(pv, qty, end_t-start_t, num_slices)
-    exec_bot.exit()
+    #exec_bot.exit()
 
 # looks like we have hung thread
 # argparse for the arguments - inclusive symbol
